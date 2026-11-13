@@ -70,16 +70,17 @@ async function main() {
   );
 
   // 5. AI skills are merged into the deterministic analysis, but only known ones.
-  const merged = analyze({
+  const merged = await analyze({
     skillsText: "Built dashboards with React and SQL.",
     targetRole: "fullstack",
     extraSkills: ["nextjs", "made-up"],
+    computeEmbeddings: false,
   });
   assert(merged.extractedSkills.includes("nextjs"), "Expected AI skill to be merged");
   assert(!merged.extractedSkills.includes("made-up"), "Expected unknown AI skill to be ignored");
 
   // 6. Custom role profiles override preset role requirements.
-  const custom = analyze({
+  const custom = await analyze({
     skillsText: "Node, SQL, Docker",
     targetRole: "custom",
     roleProfile: {
@@ -87,6 +88,7 @@ async function main() {
       label: "Platform Engineer",
       skills: ["node", "sql", "docker", "kubernetes"],
     },
+    computeEmbeddings: false,
   });
   assert(custom.targetRole?.label === "Platform Engineer", "Expected custom role label");
   assert(custom.targetRole?.key === "custom", "Expected custom role key");

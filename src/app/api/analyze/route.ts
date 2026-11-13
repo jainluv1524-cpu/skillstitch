@@ -105,7 +105,7 @@ export async function POST(req: Request) {
       aiMeta.notices?.push("Local AI is disabled, so the rule-based extractor was used.");
     }
 
-    const result = analyze({ skillsText, targetRole, extraSkills, roleProfile });
+    const result = await analyze({ skillsText, targetRole, extraSkills, roleProfile, computeEmbeddings: true });
     if (aiMeta.requested) {
       result.ai = aiMeta;
     }

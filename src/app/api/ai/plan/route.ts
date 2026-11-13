@@ -56,7 +56,7 @@ export async function POST(req: Request) {
       roleProfile = { key: "custom", label: role.label, skills: role.skills };
     }
 
-    const result = analyze({ skillsText, targetRole, roleProfile });
+    const result = await analyze({ skillsText, targetRole, roleProfile, computeEmbeddings: false });
 
     const key = cacheKey({
       version: "plan-v1",

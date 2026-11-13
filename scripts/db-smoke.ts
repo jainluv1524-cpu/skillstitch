@@ -5,9 +5,10 @@ async function main() {
   const { saveAnalysis, listAnalyses, deleteAnalyses, deleteAnalysis } = await import("../src/lib/db");
 
   const userId = "00000000-0000-4000-8000-000000000001";
-  const result = analyze({
+  const result = await analyze({
     skillsText: "React, TypeScript, Node.js, SQL, Git, testing",
     targetRole: "fullstack",
+    computeEmbeddings: false,
   });
 
   const first = saveAnalysis(userId, {
@@ -19,7 +20,7 @@ async function main() {
   const second = saveAnalysis(userId, {
     skillsText: "Python, pandas, scikit-learn",
     targetRole: "ml",
-    result: analyze({ skillsText: "Python, pandas, scikit-learn", targetRole: "ml" }),
+    result: await analyze({ skillsText: "Python, pandas, scikit-learn", targetRole: "ml", computeEmbeddings: false }),
   });
 
   const afterSave = listAnalyses(userId, 10);

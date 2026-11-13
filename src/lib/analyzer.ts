@@ -84,13 +84,13 @@ function scoreProject(project: ProjectIdea, userSkills: Set<string>, missingSkil
   return { score, covers };
 }
 
-export function analyze(input: {
+export async function analyze(input: {
   skillsText: string;
   targetRole?: string;
   extraSkills?: string[];
   roleProfile?: RoleProfile;
   computeEmbeddings?: boolean;
-}): AnalysisResult {
+}): Promise<AnalysisResult & { embeddingSimilarity?: number }> {
   const extracted = new Set(extractSkills(input.skillsText));
   for (const raw of input.extraSkills ?? []) {
     const skill = normalizeSkill(raw);
@@ -103,8 +103,7 @@ export function analyze(input: {
     : null;
 
   const profile: RoleProfile | null =
-    input.roleProfile ??
-    (roleKey ? { key: roleKey, label: ROLES[roleKey].label, skills: ROLES[roleKey].skills } : null);
+    input.roleProfile ?? (roleKey ? { key: roleKey, label: ROLES[roleKey].label, skills: ROLES[roleKey].skills } : null);
 
   const targetRole = profile ? { key: profile.key, label: profile.label } : null;
   const requiredSkills = profile
@@ -121,14 +120,14 @@ export function analyze(input: {
 
   // Optional: compute embedding-based similarity between user's skillsText and role requirements
   let embeddingSimilarity: number | undefined;
-  if (input.computeEmbeddings && typeof window === "undefined") {
-    // Only compute on server side (Node.js)
-    ;(async () => {
-      const { augmentAnalysisWithEmbeddings } = await import("./embeddings");
-      // This is async, so we can't await it here in the synchronous function
-      // The result will be available via the AI analysis endpoint instead
-    })();
+  if (input.computeEmbeddings) {
+    const { augmentAnalysisWithEmbeddings } = await import("./embeddings");
+    const resultWithEmbedding = await augmentAnalysisWithEmbeddings(
+      { targetRole, extractedSkills, requiredSkills, matchedSkills, missingSkills, recommendations } as AnalysisResult,
+      input.skillsText
+    );
+    embeddingSimilarity = resultWithEmbedding.embeddingSimilarity;
   }
 
-  return { targetRole, extractedSkills, requiredSkills, matchedSkills, missingSkills, recommendations };
+  return { targetRole, extractedSkills, requiredSkills, matchedSkills, missingSkills, recommendations, embeddingSimilarity };
 }
