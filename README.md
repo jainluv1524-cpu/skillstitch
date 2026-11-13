@@ -25,7 +25,7 @@ Most learning roadmaps are generic. SkillStitch makes the plan **personal**:
 - **Weighted project recommendations**: coverage, similarity, feasibility, and gap-focus scoring.
 - **Actionable project cards** with steps and resource pointers.
 - **Markdown roadmap export**.
-- Clean, responsive dark UI with Tailwind CSS.
+- Warm editorial UI (burgundy + cream, serif display type) with a responsive dashboard layout.
 
 ### Phase 2 — persistence
 - **Server-side saved analyses** using SQLite (Node's built-in `node:sqlite`).
