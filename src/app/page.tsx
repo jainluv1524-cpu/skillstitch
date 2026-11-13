@@ -1,69 +1,174 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+
+type Recommendation = {
+  id: string;
+  title: string;
+  description: string;
+  skills: string[];
+  steps: string[];
+  resources: string[];
+  score: number;
+  covers: string[];
+};
+
+type AnalysisResult = {
+  targetRole: { key: string; label: string } | null;
+  extractedSkills: string[];
+  requiredSkills: string[];
+  matchedSkills: string[];
+  missingSkills: string[];
+  recommendations: Recommendation[];
+};
+
+const ROLES = [
+  { key: "frontend", label: "Frontend Developer" },
+  { key: "backend", label: "Backend Developer" },
+  { key: "fullstack", label: "Full-Stack Developer" },
+  { key: "ml", label: "ML-Aware Full-Stack Developer" },
+];
 
 export default function Home() {
+  const [skillsText, setSkillsText] = useState("");
+  const [targetRole, setTargetRole] = useState("fullstack");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
+
+  async function onAnalyze(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skillsText, targetRole }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Analysis failed");
+      setResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+      <header className="mb-8">
+        <p className="mb-2 inline-block rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-300">
+          Full-stack MVP · Light NLP skill extraction & matching
+        </p>
+        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">SkillStitch</h1>
+        <p className="mt-2 max-w-2xl text-slate-300">
+          Personalized project & skill-gap planner. Paste your skills or experience, pick a target role, and get tailored mini-projects to close your gaps.
+        </p>
+      </header>
+
+      <section className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
+        <form onSubmit={onAnalyze} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg">
+          <label className="mb-2 block text-sm font-medium text-slate-200">Your skills / resume / project experience</label>
+          <textarea
+            value={skillsText}
+            onChange={(e) => setSkillsText(e.target.value)}
+            rows={10}
+            placeholder="e.g. Built React and Next.js apps with TypeScript, REST APIs in Node.js, basic SQL. Used Git and wrote some unit tests..."
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-sm text-slate-100 outline-none ring-cyan-400/40 placeholder:text-slate-500 focus:ring"
+          />
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-200">Target role</label>
+              <select
+                value={targetRole}
+                onChange={(e) => setTargetRole(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm outline-none ring-cyan-400/40 focus:ring"
+              >
+                {ROLES.map((r) => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-xl bg-cyan-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-60"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+              {loading ? "Analyzing..." : "Analyze & Recommend"}
+            </button>
+          </div>
+          {error && <p className="mt-3 text-sm text-rose-400">{error}</p>}
+          <p className="mt-4 text-xs text-slate-400">
+            How it works: keyword/NLP-style extraction identifies known skills, compares them against the target role, then a weighted similarity score ranks projects that best fill your gaps.
           </p>
+        </form>
+
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+            <h2 className="text-lg font-semibold">Skill Gap Snapshot</h2>
+            {!result ? (
+              <p className="mt-2 text-sm text-slate-400">Run an analysis to see extracted skills, gaps, and recommendations.</p>
+            ) : (
+              <div className="mt-3 space-y-3 text-sm">
+                <div>
+                  <p className="text-slate-400">Extracted skills</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {result.extractedSkills.length ? result.extractedSkills.map((s) => <span key={s} className="rounded-full bg-slate-800 px-2.5 py-1 text-slate-200">{s}</span>) : <span className="text-slate-500">None detected</span>}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-slate-400">Matched for {result.targetRole?.label}</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {result.matchedSkills.length ? result.matchedSkills.map((s) => <span key={s} className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-emerald-300">{s}</span>) : <span className="text-slate-500">No matches yet</span>}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-slate-400">Missing / to grow</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {result.missingSkills.length ? result.missingSkills.map((s) => <span key={s} className="rounded-full bg-amber-500/15 px-2.5 py-1 text-amber-300">{s}</span>) : <span className="text-emerald-300">No major gaps for this role profile</span>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </section>
+
+      {result && (
+        <section className="mt-8">
+          <h2 className="mb-4 text-xl font-semibold">Recommended Mini-Projects</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            {result.recommendations.map((p) => (
+              <article key={p.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-lg font-semibold text-slate-100">{p.title}</h3>
+                  <span className="rounded-md bg-cyan-500/15 px-2 py-1 text-xs font-medium text-cyan-300">score {p.score}</span>
+                </div>
+                <p className="mt-2 text-sm text-slate-300">{p.description}</p>
+                <div className="mt-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Covers gaps</p>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {p.covers.length ? p.covers.map((s) => <span key={s} className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">{s}</span>) : <span className="text-xs text-slate-500">Reinforces existing skills</span>}
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Skills practiced</p>
+                  <p className="mt-1 text-sm text-slate-200">{p.skills.join(", ")}</p>
+                </div>
+                <details className="mt-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+                  <summary className="cursor-pointer text-sm font-medium text-slate-200">Steps & resources</summary>
+                  <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-300">
+                    {p.steps.map((s) => <li key={s}>{s}</li>)}
+                  </ol>
+                  <p className="mt-2 text-sm text-slate-400"><span className="font-medium text-slate-300">Resources:</span> {p.resources.join(" · ")}</p>
+                </details>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
   );
 }
