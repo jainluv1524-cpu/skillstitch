@@ -1,12 +1,19 @@
 //
 // Session management for SkillStitch
-// Supports anonymous cookie sessions and (optionally) GitHub OAuth via NextAuth.js
+// Supports anonymous cookie sessions (default) and GitHub OAuth (optional)
 //
 // 1. Anonymous mode (default): each visitor gets a skillstitch_uid cookie
-// 2. GitHub OAuth mode: set GITHUB_ID, GITHUB_SECRET, NEXTAUTH_SECRET, NEXTAUTH_URL
-//    and create the auth callback route at src/app/api/auth/[...nextauth]/route.ts
+//    - No credentials required
+//    - Analyses are isolated per session cookie
+//    - Cookie expires in 1 year
 //
-
+// 2. GitHub OAuth mode (optional):
+//    - Set env vars: GITHUB_ID, GITHUB_SECRET, NEXTAUTH_SECRET, NEXTAUTH_URL
+//    - Create auth callback at src/app/api/auth/[...nextauth]/route.ts
+//    - Users click "Sign in with GitHub" to authenticate
+//    - After callback, a JWT session is created
+//    - getUserId() returns the GitHub user ID
+//
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 
