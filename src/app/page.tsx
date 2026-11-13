@@ -68,6 +68,10 @@ export default function Home() {
 
   async function onAnalyze(e: React.FormEvent) {
     e.preventDefault();
+    if (!skillsText.trim()) {
+      setError("Add your skills, resume text, or project experience first.");
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
