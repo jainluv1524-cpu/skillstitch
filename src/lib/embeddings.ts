@@ -2,29 +2,40 @@
 // Embedding-based skill matching for SkillStitch
 // Adds sentence-transformer semantic similarity alongside the keyword scorer
 // for broader skill recognition beyond exact keyword matches.
-//
 // Requires: @xenova/transformers installed (npm i @xenova/transformers)
 //
-// Usage:
-//   const embeddings = await computeSentenceTransformersEmbeddings([skillsText, jobDescription]);
+// Usage (server side):
+//   const embeddings = await computeSentenceTransformersEmbeddings(["text1", "text2"]);
 //   const similarity = cosineSimilarity(embeddings[0], embeddings[1]);
-//   const augmentedResult = augmentAnalysisWithEmbeddings(result, embeddings);
+//   const augmented = augmentAnalysisWithEmbeddings(result, "user skills text");
 //
+import { type AnalysisResult } from "./analyzer";
+import { cookies } from "next/headers";
+import { randomUUID } from "node:crypto";
 
-import { KNOWN_SKILLS, extractSkills, type AnalysisResult } from "./analyzer";
+/** Cache for embeddings per session cookie */
+const embeddingCache = new Map<string, number[][]>();
 
 /** Compute sentence-transformer embeddings for a list of texts.
- *  Uses @xenova/transformers on the Node.js runtime.
- *  Returns an array of number[] vectors (one per input text).
+ * Uses @xenova/transformers on the Node.js runtime.
+ * Returns an array of number[] vectors (one per input text).
  */
-export async function computeSentenceTransformersEmbeddings(
-  texts: string[]
+export async function computeSentenceTransformerEmbeddings(
+  texts: string[],
 ): Promise<number[][]> {
+  // Check cache first (keyed by text hash)
+  const cacheKey = texts.join("|||");
+  const cached = embeddingCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
   // Lazy import to avoid blocking the event loop during startup
   const { pipeline } = await import("@xenova/transformers");
   // Use a small, fast model for sentence embeddings
   const classifier = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
   const embeddings: number[][] = [];
+
   for (const text of texts) {
     // @ts-ignore – transformers pipeline returns a typed array
     const output = await classifier(text, { pooling: "mean", normalize: true });
@@ -32,6 +43,12 @@ export async function computeSentenceTransformersEmbeddings(
     const vec = Array.from(output.data as Float32Array);
     embeddings.push(vec);
   }
+
+  // Store in cache (limit size to prevent memory growth)
+  if (embeddingCache.size < 100) {
+    embeddingCache.set(cacheKey, embeddings);
+  }
+
   return embeddings;
 }
 
@@ -48,16 +65,16 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /** Augment an AnalysisResult with an embedding-based similarity score.
- *  Compares the user's full skillsText against the requiredSkills of the target role.
- *  Returns the original result with an added `embeddingSimilarity` field (0–1).
+ * Compares the user's full skillsText against the requiredSkills of the target role.
+ * Returns the original result with an added `embeddingSimilarity` field (0–1).
  */
 export async function augmentAnalysisWithEmbeddings(
   result: AnalysisResult,
-  skillsText: string
+  skillsText: string,
 ): Promise<AnalysisResult & { embeddingSimilarity: number }> {
   const requiredSkillsText =
     result.requiredSkills.join(" ") + " " + result.missingSkills.join(" ");
-  const [userEmbedding, roleEmbedding] = await computeSentenceTransformersEmbeddings([
+  const [userEmbedding, roleEmbedding] = await computeSentenceTransformerEmbeddings([
     skillsText,
     requiredSkillsText,
   ]);
