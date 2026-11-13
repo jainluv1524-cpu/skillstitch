@@ -1,15 +1,23 @@
 import { PROJECTS, ROLES, SKILL_ALIASES, normalizeSkill, type RoleKey, type ProjectIdea } from "./skills";
+import type { AiRunMeta } from "./ai/types";
+
+export type RoleProfile = {
+  key: string;
+  label: string;
+  skills: string[];
+};
 
 export type AnalysisResult = {
-  targetRole: { key: RoleKey; label: string } | null;
+  targetRole: { key: string; label: string } | null;
   extractedSkills: string[];
   requiredSkills: string[];
   matchedSkills: string[];
   missingSkills: string[];
   recommendations: Array<ProjectIdea & { score: number; covers: string[] }>;
+  ai?: AiRunMeta;
 };
 
-const KNOWN_SKILLS = Array.from(
+export const KNOWN_SKILLS = Array.from(
   new Set([
     ...Object.values(ROLES).flatMap((r) => r.skills),
     ...PROJECTS.flatMap((p) => p.skills),
@@ -17,6 +25,10 @@ const KNOWN_SKILLS = Array.from(
     ...Object.keys(SKILL_ALIASES),
   ].map(normalizeSkill))
 );
+
+export function isKnownSkill(value: string): boolean {
+  return KNOWN_SKILLS.includes(normalizeSkill(value));
+}
 
 function tokenize(text: string): string[] {
   return text
@@ -69,13 +81,31 @@ function scoreProject(project: ProjectIdea, userSkills: Set<string>, missingSkil
   return { score, covers };
 }
 
-export function analyze(input: { skillsText: string; targetRole?: string }): AnalysisResult {
-  const extractedSkills = extractSkills(input.skillsText);
+export function analyze(input: {
+  skillsText: string;
+  targetRole?: string;
+  extraSkills?: string[];
+  roleProfile?: RoleProfile;
+}): AnalysisResult {
+  const extracted = new Set(extractSkills(input.skillsText));
+  for (const raw of input.extraSkills ?? []) {
+    const skill = normalizeSkill(raw);
+    if (KNOWN_SKILLS.includes(skill)) extracted.add(skill);
+  }
+  const extractedSkills = Array.from(extracted).sort();
+
   const roleKey = (Object.keys(ROLES) as RoleKey[]).includes(input.targetRole as RoleKey)
     ? (input.targetRole as RoleKey)
     : null;
-  const targetRole = roleKey ? { key: roleKey, label: ROLES[roleKey].label } : null;
-  const requiredSkills = roleKey ? ROLES[roleKey].skills : [];
+
+  const profile: RoleProfile | null =
+    input.roleProfile ??
+    (roleKey ? { key: roleKey, label: ROLES[roleKey].label, skills: ROLES[roleKey].skills } : null);
+
+  const targetRole = profile ? { key: profile.key, label: profile.label } : null;
+  const requiredSkills = profile
+    ? Array.from(new Set(profile.skills.map(normalizeSkill)))
+    : [];
   const userSet = new Set(extractedSkills);
   const matchedSkills = requiredSkills.filter((s) => userSet.has(s));
   const missingSkills = requiredSkills.filter((s) => !userSet.has(s));

@@ -13,6 +13,13 @@ type Recommendation = {
   covers: string[];
 };
 
+type AiRunMeta = {
+  requested: boolean;
+  extraction?: { used: boolean; model?: string; addedSkills?: string[] };
+  role?: { used: boolean; model?: string; label?: string };
+  notices?: string[];
+};
+
 type AnalysisResult = {
   targetRole: { key: string; label: string } | null;
   extractedSkills: string[];
@@ -20,6 +27,7 @@ type AnalysisResult = {
   matchedSkills: string[];
   missingSkills: string[];
   recommendations: Recommendation[];
+  ai?: AiRunMeta;
 };
 
 type HistoryEntry = {
@@ -28,6 +36,27 @@ type HistoryEntry = {
   skillsText: string;
   targetRole: string;
   result: AnalysisResult;
+};
+
+type AiStatus = {
+  enabled: boolean;
+  reachable: boolean;
+  modelAvailable: boolean;
+  model: string;
+  baseUrl: string;
+  models: string[];
+};
+
+type AiPlan = {
+  summary: string;
+  weeks: Array<{
+    week: number;
+    theme: string;
+    focus: string[];
+    actions: string[];
+    deliverable: string;
+  }>;
+  rationale: Array<{ projectId: string; why: string }>;
 };
 
 type GlyphKind =
@@ -115,6 +144,7 @@ const ROLES = [
   { key: "backend", label: "Backend Developer" },
   { key: "fullstack", label: "Full-Stack Developer" },
   { key: "ml", label: "ML-Aware Full-Stack Developer" },
+  { key: "custom", label: "Custom role from a job description" },
 ];
 
 const NAV_ITEMS: Array<{ href: string; label: string; glyph: GlyphKind }> = [
@@ -122,19 +152,35 @@ const NAV_ITEMS: Array<{ href: string; label: string; glyph: GlyphKind }> = [
   { href: "#gaps", label: "Skill gaps", glyph: "gauge" },
   { href: "#history", label: "History", glyph: "clock" },
   { href: "#projects", label: "Projects", glyph: "layers" },
+  { href: "#plan", label: "AI plan", glyph: "spark" },
 ];
 
 const MAX_HISTORY = 10;
 
+function historyRoleLabel(entry: HistoryEntry): string {
+  return (
+    entry.result.targetRole?.label ??
+    ROLES.find((role) => role.key === entry.targetRole)?.label ??
+    entry.targetRole
+  );
+}
+
 export default function Home() {
   const [skillsText, setSkillsText] = useState("");
   const [targetRole, setTargetRole] = useState("fullstack");
+  const [jobDescription, setJobDescription] = useState("");
+  const [useAi, setUseAi] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [plan, setPlan] = useState<AiPlan | null>(null);
+  const [planModel, setPlanModel] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -154,19 +200,77 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/ai/status")
+      .then((res) => res.json())
+      .then((data: AiStatus) => {
+        if (cancelled) return;
+        setAiStatus(data);
+        if (data.enabled && data.reachable && data.modelAvailable) setUseAi(true);
+      })
+      .catch(() => {
+        if (!cancelled) setAiStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const aiReady = Boolean(aiStatus?.enabled && aiStatus.reachable && aiStatus.modelAvailable);
+  const isCustomRole = targetRole === "custom";
+  const canSubmit =
+    !loading &&
+    skillsText.trim().length > 0 &&
+    (!isCustomRole || (aiReady && jobDescription.trim().length >= 40));
+
+  const aiDot = aiReady
+    ? "bg-sage-ink"
+    : aiStatus?.reachable && !aiStatus.modelAvailable
+      ? "bg-gold"
+      : "bg-rose";
+
+  const aiLabel = !aiStatus
+    ? "Checking local AI…"
+    : !aiStatus.enabled
+      ? "Local AI disabled"
+      : !aiStatus.reachable
+        ? "Ollama is not running"
+        : !aiStatus.modelAvailable
+          ? `Pull ${aiStatus.model}`
+          : `Ollama · ${aiStatus.model}`;
+
   async function onAnalyze(e: FormEvent) {
     e.preventDefault();
     if (!skillsText.trim()) {
       setError("Add your skills, resume text, or project experience first.");
       return;
     }
+    if (isCustomRole) {
+      if (!aiReady) {
+        setError("Custom roles need Ollama running locally. Start it or pick a preset role.");
+        return;
+      }
+      if (jobDescription.trim().length < 40) {
+        setError("Paste a longer job description so a role profile can be derived.");
+        return;
+      }
+    }
+
     setLoading(true);
     setError(null);
+    setPlan(null);
+    setPlanError(null);
     try {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ skillsText, targetRole }),
+        body: JSON.stringify({
+          skillsText,
+          targetRole,
+          jobDescription: isCustomRole ? jobDescription : undefined,
+          useAi,
+        }),
       });
       const data = (await res.json()) as AnalysisResult & {
         error?: string;
@@ -191,11 +295,39 @@ export default function Home() {
     }
   }
 
+  async function generatePlan() {
+    if (!result) return;
+    setPlanLoading(true);
+    setPlanError(null);
+    try {
+      const res = await fetch("/api/ai/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          skillsText,
+          targetRole,
+          jobDescription: isCustomRole ? jobDescription : undefined,
+        }),
+      });
+      const data = (await res.json()) as { plan?: AiPlan; model?: string; error?: string };
+      if (!res.ok || !data.plan) throw new Error(data.error || "Could not generate a plan");
+      setPlan(data.plan);
+      setPlanModel(data.model ?? aiStatus?.model ?? null);
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setPlanLoading(false);
+    }
+  }
+
   function restoreHistory(entry: HistoryEntry) {
     setSkillsText(entry.skillsText);
     setTargetRole(entry.targetRole);
+    setJobDescription("");
     setResult(entry.result);
     setError(null);
+    setPlan(null);
+    setPlanError(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -254,6 +386,27 @@ export default function Home() {
       );
     });
 
+    if (plan) {
+      lines.push("", "## AI study plan", "", plan.summary);
+      plan.weeks.forEach((week) => {
+        lines.push(
+          "",
+          `### Week ${week.week} — ${week.theme}`,
+          week.focus.length ? `**Focus:** ${week.focus.join(", ")}` : "",
+          "",
+          ...week.actions.map((action) => `- ${action}`),
+          week.deliverable ? `\n**Deliverable:** ${week.deliverable}` : ""
+        );
+      });
+      if (plan.rationale.length) {
+        lines.push("", "## Why these projects");
+        plan.rationale.forEach((item) => {
+          const project = result.recommendations.find((p) => p.id === item.projectId);
+          lines.push("", `- **${project?.title ?? item.projectId}:** ${item.why}`);
+        });
+      }
+    }
+
     lines.push("", "---", "", "Generated with SkillStitch.");
     const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -279,7 +432,7 @@ export default function Home() {
     {
       label: "Skills detected",
       value: result ? String(result.extractedSkills.length) : "—",
-      sub: "from your profile",
+      sub: result?.ai?.extraction?.used ? "rule-based + local AI" : "from your profile",
       glyph: "spark" as GlyphKind,
     },
     {
@@ -333,12 +486,16 @@ export default function Home() {
         </nav>
 
         <div className="mt-auto space-y-4 border-t border-cream/15 pt-5 text-[9px] uppercase tracking-[0.24em] text-cream/40">
+          <div className="flex items-center gap-2 normal-case tracking-normal">
+            <span className={`h-1.5 w-1.5 rounded-full ${aiDot}`} />
+            <span className="text-[10px] text-cream/60">{aiLabel}</span>
+          </div>
           <p>
             Intelligence
             <br />
             in reality
           </p>
-          <p>v0.2.0 · Node.js</p>
+          <p>v0.3.0 · Node.js</p>
         </div>
       </aside>
 
@@ -410,14 +567,14 @@ export default function Home() {
 
             <div className="relative px-6 py-8 sm:px-8 sm:py-10 lg:px-10">
               <p className="text-[10px] uppercase tracking-[0.32em] text-cream/60">
-                SkillStitch · Phase 2
+                SkillStitch · Phase 3 · Local AI
               </p>
               <h1 className="mt-4 max-w-xl font-serif text-3xl leading-tight sm:text-4xl lg:text-5xl">
                 Every skill. A clearer path.
               </h1>
               <p className="mt-3 max-w-lg text-sm leading-6 text-cream/75 sm:text-base">
-                Turn your experience into a focused project roadmap — with light NLP
-                matching and a clear view of what to build next.
+                Turn your experience into a focused project roadmap — with optional local AI
+                for deeper extraction, custom roles, and a week-by-week plan.
               </p>
               <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-[10px] uppercase tracking-[0.22em] text-cream/50">
                 <a href="#planner" className="transition hover:text-cream">
@@ -431,6 +588,9 @@ export default function Home() {
                 </a>
                 <a href="#projects" className="transition hover:text-cream">
                   Projects
+                </a>
+                <a href="#plan" className="transition hover:text-cream">
+                  AI plan
                 </a>
                 <span className="ml-auto hidden text-cream/35 sm:inline">
                   Observe · Understand · Build
@@ -467,6 +627,14 @@ export default function Home() {
             ))}
           </section>
 
+          {result?.ai?.notices?.length ? (
+            <div className="mt-4 space-y-1 rounded-xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm text-ink">
+              {result.ai.notices.map((notice) => (
+                <p key={notice}>{notice}</p>
+              ))}
+            </div>
+          ) : null}
+
           <section className="mt-6 grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
             <form
               id="planner"
@@ -487,12 +655,31 @@ export default function Home() {
                 </span>
               </div>
 
-              <label
-                htmlFor="skills"
-                className="mt-5 block text-sm font-medium text-ink"
-              >
-                Your skills / resume / project experience
-              </label>
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+                <label htmlFor="skills" className="text-sm font-medium text-ink">
+                  Your skills / resume / project experience
+                </label>
+                <label
+                  title={
+                    aiStatus
+                      ? `${aiStatus.baseUrl} · ${aiLabel}`
+                      : "Checking local AI status"
+                  }
+                  className={`inline-flex items-center gap-2 rounded-full border border-line bg-cream px-3 py-1 text-[10px] uppercase tracking-[0.16em] ${
+                    aiReady ? "cursor-pointer text-maroon" : "cursor-not-allowed text-muted/70"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={useAi}
+                    disabled={!aiReady}
+                    onChange={(e) => setUseAi(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-[#4a1220] disabled:cursor-not-allowed"
+                  />
+                  Local AI
+                  <span className={`h-1.5 w-1.5 rounded-full ${aiDot}`} />
+                </label>
+              </div>
               <textarea
                 id="skills"
                 value={skillsText}
@@ -501,6 +688,11 @@ export default function Home() {
                 placeholder="e.g. Built React and Next.js apps with TypeScript, REST APIs in Node.js, basic SQL. Used Git and wrote some unit tests..."
                 className="mt-2 w-full rounded-xl border border-line bg-cream p-3.5 text-sm text-ink outline-none ring-rose/20 placeholder:text-muted/60 focus:border-rose/60 focus:ring-2"
               />
+              <p className="mt-1.5 text-[11px] text-muted">
+                {aiReady
+                  ? "Local AI runs on your machine through Ollama — nothing leaves this computer."
+                  : "Local AI is optional. Start Ollama to unlock deeper extraction and custom roles."}
+              </p>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                 <div>
@@ -525,24 +717,53 @@ export default function Home() {
                 </div>
                 <button
                   type="submit"
-                  disabled={loading || !skillsText.trim()}
+                  disabled={!canSubmit}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-maroon px-5 py-2.5 text-sm font-semibold text-cream transition hover:bg-maroon-soft disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {loading ? "Analyzing..." : "Analyze & recommend"}
+                  {loading
+                    ? useAi
+                      ? "Analyzing with local AI…"
+                      : "Analyzing..."
+                    : "Analyze & recommend"}
                   <Glyph kind="arrow" className="h-4 w-4" />
                 </button>
               </div>
 
+              {isCustomRole && (
+                <div className="mt-4">
+                  <label htmlFor="job" className="mb-2 block text-sm font-medium text-ink">
+                    Job description
+                  </label>
+                  <textarea
+                    id="job"
+                    value={jobDescription}
+                    onChange={(e) => setJobDescription(e.target.value)}
+                    rows={6}
+                    placeholder="Paste the job posting here. Local AI will derive a role profile and required skills from it."
+                    className="w-full rounded-xl border border-line bg-cream p-3.5 text-sm text-ink outline-none ring-rose/20 placeholder:text-muted/60 focus:border-rose/60 focus:ring-2"
+                  />
+                  <p className="mt-1.5 text-[11px] text-muted">
+                    {aiReady
+                      ? `${jobDescription.trim().length}/40 characters minimum. The posting is used only for this request.`
+                      : "Custom roles need Ollama running locally. Pick a preset role instead."}
+                  </p>
+                </div>
+              )}
+
               {error && (
-                <p className="mt-3 rounded-lg bg-rose/10 px-3 py-2 text-sm text-rose">
+                <p
+                  role="alert"
+                  className="mt-3 rounded-lg bg-rose/10 px-3 py-2 text-sm text-rose"
+                >
                   {error}
                 </p>
               )}
 
               <p className="mt-4 text-xs leading-5 text-muted">
-                How it works: keyword/NLP-style extraction identifies known skills,
-                compares them against the target role, then a weighted similarity score
-                ranks projects that best fill your gaps.
+                How it works: keyword/NLP-style extraction identifies known skills, compares
+                them against the target role, then a weighted similarity score ranks projects
+                that best fill your gaps. Local AI is optional and validated against the same
+                skill taxonomy.
               </p>
             </form>
 
@@ -559,9 +780,16 @@ export default function Home() {
                     <h2 className="mt-1 font-serif text-2xl text-ink">Skill gaps</h2>
                   </div>
                   {result && (
-                    <span className="rounded-full bg-maroon/10 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-maroon">
-                      {result.targetRole?.label}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="rounded-full bg-maroon/10 px-3 py-1 text-[10px] uppercase tracking-[0.18em] text-maroon">
+                        {result.targetRole?.label}
+                      </span>
+                      {result.ai?.role?.used && (
+                        <span className="text-[9px] uppercase tracking-[0.16em] text-muted">
+                          AI role profile
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -573,9 +801,16 @@ export default function Home() {
                 ) : (
                   <div className="mt-4 space-y-4 text-sm">
                     <div>
-                      <p className="text-[10px] uppercase tracking-[0.2em] text-muted">
-                        Extracted
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-muted">
+                          Extracted
+                        </p>
+                        {Boolean(result.ai?.extraction?.addedSkills?.length) && (
+                          <span className="rounded-full bg-rose/15 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-rose">
+                            +{result.ai?.extraction?.addedSkills?.length} by AI
+                          </span>
+                        )}
+                      </div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {result.extractedSkills.length ? (
                           result.extractedSkills.map((s) => (
@@ -679,8 +914,7 @@ export default function Home() {
                         >
                           <span>
                             <span className="block text-sm font-medium text-ink">
-                              {ROLES.find((r) => r.key === h.targetRole)?.label ??
-                                h.targetRole}
+                              {historyRoleLabel(h)}
                             </span>
                             <span className="mt-0.5 block text-xs text-muted">
                               {new Date(h.createdAt).toLocaleString()} ·{" "}
@@ -714,15 +948,38 @@ export default function Home() {
                     Ranked by how well they close your gaps.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={exportRoadmap}
-                  className="inline-flex items-center gap-2 rounded-full border border-line bg-cream-soft px-4 py-2 text-sm font-medium text-maroon transition hover:border-rose/40 hover:bg-sand/40"
-                >
-                  Export roadmap (.md)
-                  <Glyph kind="arrow" className="h-4 w-4" />
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {aiReady && (
+                    <button
+                      type="button"
+                      onClick={generatePlan}
+                      disabled={planLoading}
+                      className="inline-flex items-center gap-2 rounded-full border border-rose/30 bg-rose/10 px-4 py-2 text-sm font-medium text-maroon transition hover:border-rose/50 hover:bg-rose/15 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Glyph kind="spark" className="h-4 w-4" />
+                      {planLoading
+                        ? "Thinking locally…"
+                        : plan
+                          ? "Regenerate AI plan"
+                          : "Generate AI plan"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={exportRoadmap}
+                    className="inline-flex items-center gap-2 rounded-full border border-line bg-cream-soft px-4 py-2 text-sm font-medium text-maroon transition hover:border-rose/40 hover:bg-sand/40"
+                  >
+                    Export roadmap (.md)
+                    <Glyph kind="arrow" className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
+
+              {planError && (
+                <p role="alert" className="mb-4 rounded-xl bg-rose/10 px-4 py-3 text-sm text-rose">
+                  {planError}
+                </p>
+              )}
 
               <div className="grid gap-4 md:grid-cols-2">
                 {filteredRecommendations.map((p) => (
@@ -794,9 +1051,93 @@ export default function Home() {
             </section>
           )}
 
+          {result && plan && (
+            <section id="plan" className="mt-8 scroll-mt-24">
+              <div className="relative overflow-hidden rounded-2xl bg-maroon p-6 text-cream sm:p-8">
+                <div className="topo absolute inset-0 opacity-50" />
+                <div className="relative">
+                  <p className="text-[10px] uppercase tracking-[0.28em] text-cream/60">
+                    Local AI · {planModel ?? aiStatus?.model ?? "Ollama"}
+                  </p>
+                  <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
+                    Four weeks, one path.
+                  </h2>
+                  <p className="mt-3 max-w-3xl text-sm leading-6 text-cream/80">
+                    {plan.summary}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {plan.weeks.map((week) => (
+                  <article
+                    key={week.week}
+                    className="rounded-2xl border border-line bg-cream-soft p-5 shadow-[0_1px_0_rgba(42,25,22,0.04)] sm:p-6"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-maroon font-serif text-sm text-cream">
+                        {week.week}
+                      </span>
+                      <h3 className="font-serif text-lg text-ink">{week.theme}</h3>
+                    </div>
+
+                    {week.focus.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {week.focus.map((skill) => (
+                          <span
+                            key={skill}
+                            className="rounded-full bg-maroon/10 px-2.5 py-1 text-xs text-maroon"
+                          >
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-muted">
+                      {week.actions.map((action) => (
+                        <li key={action}>{action}</li>
+                      ))}
+                    </ol>
+
+                    {week.deliverable && (
+                      <p className="mt-3 border-t border-line pt-3 text-sm text-muted">
+                        <span className="font-medium text-ink">Deliverable:</span>{" "}
+                        {week.deliverable}
+                      </p>
+                    )}
+                  </article>
+                ))}
+              </div>
+
+              {plan.rationale.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-line bg-cream-soft p-5 sm:p-6">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-muted">
+                    Why these projects
+                  </p>
+                  <ul className="mt-3 space-y-3">
+                    {plan.rationale.map((item) => {
+                      const project = result.recommendations.find(
+                        (p) => p.id === item.projectId
+                      );
+                      return (
+                        <li key={item.projectId} className="text-sm leading-6">
+                          <span className="font-medium text-ink">
+                            {project?.title ?? item.projectId}
+                          </span>
+                          <span className="text-muted"> — {item.why}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
+
           <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4 text-[10px] uppercase tracking-[0.18em] text-muted">
-            <span>SkillStitch · Phase 2</span>
-            <span>Node.js · SQLite · Light NLP</span>
+            <span>SkillStitch · Phase 3</span>
+            <span>Node.js · SQLite · Local AI (Ollama)</span>
           </footer>
         </div>
       </div>

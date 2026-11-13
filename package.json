@@ -1,6 +1,6 @@
 {
   "name": "skillstitch",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx scripts/smoke.ts && tsx scripts/db-smoke.ts"
+    "test": "tsx scripts/smoke.ts && tsx scripts/db-smoke.ts && tsx scripts/ai-smoke.ts"
   },
   "engines": {
     "node": ">=22.5"
