@@ -7,12 +7,11 @@
 //    - Analyses are isolated per session cookie
 //    - Cookie expires in 1 year
 //
-// 2. GitHub OAuth mode (optional):
-//    - Set env vars: GITHUB_ID, GITHUB_SECRET, NEXTAUTH_SECRET, NEXTAUTH_URL
-//    - Create auth callback at src/app/api/auth/[...nextauth]/route.ts
-//    - Users click "Sign in with GitHub" to authenticate
-//    - After callback, a JWT session is created
+// 2. GitHub OAuth mode (optional): set env vars GITHUB_ID, GITHUB_SECRET,
+//    NEXTAUTH_SECRET, NEXTAUTH_URL, and create the auth callback route at
+//    src/app/api/auth/[...nextauth]/route.ts
 //    - getUserId() returns the GitHub user ID
+//    - After callback, a JWT session is created
 //
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
@@ -45,8 +44,41 @@ export async function getOrCreateUserId(): Promise<{ userId: string; isNew: bool
   return { userId, isNew: true };
 }
 
+/**
+ * Returns the user ID from the session.
+ * GitHub OAuth: returns the GitHub user ID.
+ * Anonymous: returns the skillstitch_uid cookie value, or null.
+ */
 export async function getUserId(): Promise<string | null> {
-  const cookieStore = await cookies();
-  const value = cookieStore.get(USER_COOKIE)?.value;
-  return value && UUID_PATTERN.test(value) ? value : null;
+  try {
+    const url = new URL(
+      `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/api/auth/session`
+    );
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+    return data.user?.id ?? null;
+  } catch {
+    // Fall back to the anonymous cookie
+    const cookieStore = await cookies();
+    const value = cookieStore.get(USER_COOKIE)?.value;
+    return value && UUID_PATTERN.test(value) ? value : null;
+  }
+}
+
+/**
+ * Returns the full user profile from the session.
+ * GitHub OAuth: returns the GitHub user profile data.
+ * Anonymous: returns null.
+ */
+export async function getUserProfile() {
+  try {
+    const url = new URL(
+      `${process.env.NEXTAUTH_URL ?? "http://localhost:3000"}/api/auth/session`
+    );
+    const res = await fetch(url, { cache: "no-store" });
+    const data = await res.json();
+    return data.user ?? null;
+  } catch {
+    return null;
+  }
 }
