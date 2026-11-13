@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { extractSkillsWithAi, roleFromJobDescription } from "@/lib/ai/analysis";
+import { extractSkillsWithFallback } from "@/lib/ai/client";
+import { roleFromJobDescription } from "@/lib/ai/analysis";
 import { AiError } from "@/lib/ai/client";
 import { getAiConfig } from "@/lib/ai/config";
 import type { AiRunMeta } from "@/lib/ai/types";
@@ -77,14 +78,22 @@ export async function POST(req: Request) {
     let extraSkills: string[] = [];
     if (useAi && config.enabled) {
       try {
-        const extraction = await extractSkillsWithAi(skillsText);
+        const { skills: aiSkills, model, aiEnriched } = await extractSkillsWithFallback(skillsText);
         const deterministic = new Set(extractSkills(skillsText));
-        extraSkills = extraction.skills;
+        extraSkills = aiSkills;
         aiMeta.extraction = {
-          used: true,
-          model: extraction.model,
-          addedSkills: extraction.skills.filter((skill) => !deterministic.has(skill)),
+          used: aiEnriched,
+          model,
+          addedSkills: aiSkills.filter((skill: string) => !deterministic.has(skill)),
         };
+        if (aiEnriched) {
+          const newSkills = aiSkills.filter((skill: string) => !deterministic.has(skill));
+          if (newSkills.length > 0) {
+            aiMeta.notices?.push(
+              `+${newSkills.length} skill${newSkills.length > 1 ? "s" : ""} identified by local AI`
+            );
+          }
+        }
       } catch {
         aiMeta.extraction = { used: false };
         aiMeta.notices?.push(
