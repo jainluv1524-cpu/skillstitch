@@ -5,9 +5,18 @@ services:
       - "3000:3000"
     environment:
       SKILLSTITCH_DB_PATH: /data/skillstitch.db
+      # Optional GitHub OAuth (set these to enable):
+      # GITHUB_ID: your-github-oauth-client-id
+      # GITHUB_SECRET: your-github-oauth-client-secret
+      # NEXTAUTH_SECRET: a-long-random-string-for-jwt-signing
+      # NEXTAUTH_URL: http://localhost:3000 (or your domain)
     volumes:
       - skillstitch-data:/data
+    # Restart unless explicitly stopped
     restart: unless-stopped
+    # Open port in firewall (cloud providers may need this)
+    # healthcheck already defined in Dockerfile
 
 volumes:
   skillstitch-data:
+    driver: local

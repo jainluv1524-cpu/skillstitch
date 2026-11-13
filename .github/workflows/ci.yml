@@ -32,3 +32,27 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      - name: Test built container (quick smoke)
+        run: |
+          # Build the image
+          docker build -t skillstitch-test .
+          # Run it in background
+          docker run -d -p 3000:3000 \
+            -e SKILLSTITCH_DB_PATH=/data/skillstitch.db \
+            -e NEXTAUTH_URL=http://localhost:3000 \
+            --name skillstitch-container skillstitch-test
+          # Wait for it to start
+          sleep 10
+          # Check health endpoint
+          if curl -f http://localhost:3000/api/ai/status; then
+            echo "Container health check PASSED"
+          else
+            echo "Container health check FAILED"
+            docker logs skillstitch-container
+            exit 1
+          fi
+          # Clean up
+          docker stop skillstitch-container
+          docker rm skillstitch-container
+          docker rmi skillstitch-test
