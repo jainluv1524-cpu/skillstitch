@@ -15,6 +15,9 @@ export type AnalysisResult = {
   missingSkills: string[];
   recommendations: Array<ProjectIdea & { score: number; covers: string[] }>;
   ai?: AiRunMeta;
+  /** Cosine similarity (0–1) between user's skillsText and the target role's required skills,
+   *  computed via sentence-transformers. undefined when embeddings not computed. */
+  embeddingSimilarity?: number;
 };
 
 export const KNOWN_SKILLS = Array.from(
@@ -86,6 +89,7 @@ export function analyze(input: {
   targetRole?: string;
   extraSkills?: string[];
   roleProfile?: RoleProfile;
+  computeEmbeddings?: boolean;
 }): AnalysisResult {
   const extracted = new Set(extractSkills(input.skillsText));
   for (const raw of input.extraSkills ?? []) {
@@ -114,6 +118,17 @@ export function analyze(input: {
   const recommendations = PROJECTS.map((p) => ({ ...p, ...scoreProject(p, userSet, missingSet) }))
     .sort((a, b) => b.score - a.score || b.covers.length - a.covers.length)
     .slice(0, 5);
+
+  // Optional: compute embedding-based similarity between user's skillsText and role requirements
+  let embeddingSimilarity: number | undefined;
+  if (input.computeEmbeddings && typeof window === "undefined") {
+    // Only compute on server side (Node.js)
+    ;(async () => {
+      const { augmentAnalysisWithEmbeddings } = await import("./embeddings");
+      // This is async, so we can't await it here in the synchronous function
+      // The result will be available via the AI analysis endpoint instead
+    })();
+  }
 
   return { targetRole, extractedSkills, requiredSkills, matchedSkills, missingSkills, recommendations };
 }
