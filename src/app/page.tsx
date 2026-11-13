@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 
 type Recommendation = {
   id: string;
@@ -37,48 +37,7 @@ const ROLES = [
   { key: "ml", label: "ML-Aware Full-Stack Developer" },
 ];
 
-const HISTORY_KEY = "skillstitch:history:v1";
-const EMPTY_HISTORY: HistoryEntry[] = [];
-
-let historyCache: HistoryEntry[] = EMPTY_HISTORY;
-let historyLoaded = false;
-const historyListeners = new Set<() => void>();
-
-function readHistory(): HistoryEntry[] {
-  if (typeof window === "undefined") return EMPTY_HISTORY;
-  try {
-    const raw = window.localStorage.getItem(HISTORY_KEY);
-    return raw ? (JSON.parse(raw) as HistoryEntry[]) : EMPTY_HISTORY;
-  } catch {
-    return EMPTY_HISTORY;
-  }
-}
-
-function getHistorySnapshot(): HistoryEntry[] {
-  if (!historyLoaded) {
-    historyCache = readHistory();
-    historyLoaded = true;
-  }
-  return historyCache;
-}
-
-function subscribeHistory(callback: () => void) {
-  historyListeners.add(callback);
-  return () => {
-    historyListeners.delete(callback);
-  };
-}
-
-function writeHistory(next: HistoryEntry[]) {
-  historyCache = next;
-  historyLoaded = true;
-  try {
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-  } catch {
-    // storage may be unavailable; keep in-memory history
-  }
-  historyListeners.forEach((listener) => listener());
-}
+const MAX_HISTORY = 10;
 
 export default function Home() {
   const [skillsText, setSkillsText] = useState("");
@@ -86,11 +45,26 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const history = useSyncExternalStore(subscribeHistory, getHistorySnapshot, () => EMPTY_HISTORY);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
-  function saveHistory(entry: HistoryEntry) {
-    writeHistory([entry, ...getHistorySnapshot()].slice(0, 5));
-  }
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/analyses")
+      .then((res) => res.json())
+      .then((data: { analyses?: HistoryEntry[] }) => {
+        if (!cancelled && Array.isArray(data.analyses)) setHistory(data.analyses);
+      })
+      .catch(() => {
+        // History is optional; the planner still works without it.
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onAnalyze(e: React.FormEvent) {
     e.preventDefault();
@@ -102,16 +76,22 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ skillsText, targetRole }),
       });
-      const data = (await res.json()) as AnalysisResult & { error?: string };
+      const data = (await res.json()) as AnalysisResult & {
+        error?: string;
+        saved?: { id: string; createdAt: string };
+      };
       if (!res.ok) throw new Error(data.error || "Analysis failed");
       setResult(data);
-      saveHistory({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        createdAt: new Date().toISOString(),
-        skillsText,
-        targetRole,
-        result: data,
-      });
+      if (data.saved) {
+        const entry: HistoryEntry = {
+          id: data.saved.id,
+          createdAt: data.saved.createdAt,
+          skillsText,
+          targetRole,
+          result: data,
+        };
+        setHistory((prev) => [entry, ...prev].slice(0, MAX_HISTORY));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -127,8 +107,13 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function clearHistory() {
-    writeHistory([]);
+  async function clearHistory() {
+    setHistory([]);
+    try {
+      await fetch("/api/analyses", { method: "DELETE" });
+    } catch {
+      // best-effort; the local list is already cleared
+    }
   }
 
   function exportRoadmap() {
@@ -183,7 +168,7 @@ export default function Home() {
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
       <header className="mb-8">
         <p className="mb-2 inline-block rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-300">
-          Full-stack MVP · Light NLP skill extraction & matching
+          Phase 2 · Server-side persistence + light NLP matching
         </p>
         <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">SkillStitch</h1>
         <p className="mt-2 max-w-2xl text-slate-300">
@@ -266,8 +251,12 @@ export default function Home() {
                 </button>
               )}
             </div>
-            {history.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-400">Your last 5 analyses are saved locally in this browser.</p>
+            {historyLoading ? (
+              <p className="mt-2 text-sm text-slate-400">Loading saved analyses...</p>
+            ) : history.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-400">
+                Your last {MAX_HISTORY} analyses are saved to your anonymous session on the server.
+              </p>
             ) : (
               <ul className="mt-3 space-y-2">
                 {history.map((h) => (
@@ -334,7 +323,7 @@ export default function Home() {
       )}
 
       <footer className="mt-12 border-t border-slate-800 pt-4 text-xs text-slate-500">
-        SkillStitch · Phase 1 MVP · Light NLP matching, no external ML services required.
+        SkillStitch · Phase 2 · SQLite-backed anonymous sessions · Light NLP matching, no external ML services required.
       </footer>
     </main>
   );
