@@ -1,0 +1,13 @@
+services:
+  skillstitch:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      SKILLSTITCH_DB_PATH: /data/skillstitch.db
+    volumes:
+      - skillstitch-data:/data
+    restart: unless-stopped
+
+volumes:
+  skillstitch-data:

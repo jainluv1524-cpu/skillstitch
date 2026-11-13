@@ -85,7 +85,7 @@ export function listAnalyses(userId: string, limit = 10): SavedAnalysis[] {
       `SELECT id, skills_text, target_role, result_json, created_at
        FROM analyses
        WHERE user_id = ?
-       ORDER BY created_at DESC
+       ORDER BY created_at DESC, rowid DESC
        LIMIT ?`
     )
     .all(userId, limit);

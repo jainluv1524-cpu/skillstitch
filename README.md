@@ -2,7 +2,7 @@
 
 **Personalized project & skill-gap planner** — paste your skills, resume, or project experience, pick a target role, and get a tailored set of mini-projects that close your gaps.
 
-![SkillStitch](https://img.shields.io/badge/status-phase%202-cyan) ![Next.js](https://img.shields.io/badge/Next.js-16-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
+![SkillStitch](https://img.shields.io/badge/status-phase%202-cyan) ![Next.js](https://img.shields.io/badge/Next.js-16-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) [![CI](https://github.com/jainluv1524-cpu/skillstitch/actions/workflows/ci.yml/badge.svg)](https://github.com/jainluv1524-cpu/skillstitch/actions/workflows/ci.yml)
 
 ## Why
 
@@ -145,7 +145,47 @@ src/
     ├── db.ts                       # node:sqlite connection + queries
     ├── session.ts                  # anonymous cookie session
     └── skills.ts                   # roles, projects, aliases, normalization
+
+scripts/
+├── smoke.ts                        # analyzer smoke test
+└── db-smoke.ts                     # in-memory SQLite smoke test
+
+Dockerfile / docker-compose.yml     # self-hosted Node.js deployment
+.github/workflows/ci.yml            # lint, typecheck, tests, build
 ```
+
+## Deploy
+
+### Docker (recommended for SQLite persistence)
+
+The image builds the Next.js standalone server and runs it on Node.js.
+
+```bash
+docker compose up --build
+```
+
+The SQLite database is stored in the `skillstitch-data` volume at `/data/skillstitch.db`, so saved analyses survive container restarts.
+
+Or without Compose:
+
+```bash
+docker build -t skillstitch .
+docker run -p 3000:3000 -v skillstitch-data:/data skillstitch
+```
+
+### Node.js directly
+
+```bash
+npm ci
+npm run build
+SKILLSTITCH_DB_PATH=./data/skillstitch.db npm start
+```
+
+> SQLite is ideal for local development and single-instance self-hosting. For serverless platforms with ephemeral filesystems, replace `src/lib/db.ts` with Postgres or another managed database while keeping the API shape.
+
+## CI
+
+GitHub Actions runs lint, type-check, smoke tests, and a production build on every push and pull request to `main`.
 
 ## Roadmap
 
