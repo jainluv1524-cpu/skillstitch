@@ -2,6 +2,8 @@
 
 **Personalized project & skill-gap planner** — paste your skills, resume, or project experience, pick a target role, and get a tailored set of mini-projects that close your gaps.
 
+> **Status:** MVP complete (Phases 1–2) · updated November 2026 · Node.js 22.5+
+
 ![SkillStitch](https://img.shields.io/badge/status-phase%202-cyan) ![Next.js](https://img.shields.io/badge/Next.js-16-black) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue) [![CI](https://github.com/jainluv1524-cpu/skillstitch/actions/workflows/ci.yml/badge.svg)](https://github.com/jainluv1524-cpu/skillstitch/actions/workflows/ci.yml)
 
 ## Why
@@ -11,6 +13,8 @@ Most learning roadmaps are generic. SkillStitch makes the plan **personal**:
 1. Extract known skills from free text (resume, bio, project notes).
 2. Compare them against a target role profile.
 3. Rank mini-projects by how well they fill the biggest gaps.
+
+![SkillStitch screenshot](docs/screenshot.png)
 
 ## Features
 

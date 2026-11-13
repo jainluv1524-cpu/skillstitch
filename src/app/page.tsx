@@ -178,8 +178,9 @@ export default function Home() {
 
       <section className="grid gap-6 lg:grid-cols-[1.1fr_1fr]">
         <form onSubmit={onAnalyze} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg">
-          <label className="mb-2 block text-sm font-medium text-slate-200">Your skills / resume / project experience</label>
+          <label htmlFor="skills" className="mb-2 block text-sm font-medium text-slate-200">Your skills / resume / project experience</label>
           <textarea
+            id="skills"
             value={skillsText}
             onChange={(e) => setSkillsText(e.target.value)}
             rows={10}
@@ -188,8 +189,9 @@ export default function Home() {
           />
           <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">Target role</label>
+              <label htmlFor="role" className="mb-2 block text-sm font-medium text-slate-200">Target role</label>
               <select
+                id="role"
                 value={targetRole}
                 onChange={(e) => setTargetRole(e.target.value)}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 p-2.5 text-sm outline-none ring-cyan-400/40 focus:ring"
@@ -201,8 +203,8 @@ export default function Home() {
             </div>
             <button
               type="submit"
-              disabled={loading}
-              className="rounded-xl bg-cyan-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-60"
+              disabled={loading || !skillsText.trim()}
+              className="rounded-xl bg-cyan-500 px-5 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Analyzing..." : "Analyze & Recommend"}
             </button>
