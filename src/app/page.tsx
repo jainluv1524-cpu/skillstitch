@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 type Recommendation = {
   id: string;
@@ -22,6 +22,14 @@ type AnalysisResult = {
   recommendations: Recommendation[];
 };
 
+type HistoryEntry = {
+  id: string;
+  createdAt: string;
+  skillsText: string;
+  targetRole: string;
+  result: AnalysisResult;
+};
+
 const ROLES = [
   { key: "frontend", label: "Frontend Developer" },
   { key: "backend", label: "Backend Developer" },
@@ -29,12 +37,60 @@ const ROLES = [
   { key: "ml", label: "ML-Aware Full-Stack Developer" },
 ];
 
+const HISTORY_KEY = "skillstitch:history:v1";
+const EMPTY_HISTORY: HistoryEntry[] = [];
+
+let historyCache: HistoryEntry[] = EMPTY_HISTORY;
+let historyLoaded = false;
+const historyListeners = new Set<() => void>();
+
+function readHistory(): HistoryEntry[] {
+  if (typeof window === "undefined") return EMPTY_HISTORY;
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    return raw ? (JSON.parse(raw) as HistoryEntry[]) : EMPTY_HISTORY;
+  } catch {
+    return EMPTY_HISTORY;
+  }
+}
+
+function getHistorySnapshot(): HistoryEntry[] {
+  if (!historyLoaded) {
+    historyCache = readHistory();
+    historyLoaded = true;
+  }
+  return historyCache;
+}
+
+function subscribeHistory(callback: () => void) {
+  historyListeners.add(callback);
+  return () => {
+    historyListeners.delete(callback);
+  };
+}
+
+function writeHistory(next: HistoryEntry[]) {
+  historyCache = next;
+  historyLoaded = true;
+  try {
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+  } catch {
+    // storage may be unavailable; keep in-memory history
+  }
+  historyListeners.forEach((listener) => listener());
+}
+
 export default function Home() {
   const [skillsText, setSkillsText] = useState("");
   const [targetRole, setTargetRole] = useState("fullstack");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const history = useSyncExternalStore(subscribeHistory, getHistorySnapshot, () => EMPTY_HISTORY);
+
+  function saveHistory(entry: HistoryEntry) {
+    writeHistory([entry, ...getHistorySnapshot()].slice(0, 5));
+  }
 
   async function onAnalyze(e: React.FormEvent) {
     e.preventDefault();
@@ -46,14 +102,81 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ skillsText, targetRole }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as AnalysisResult & { error?: string };
       if (!res.ok) throw new Error(data.error || "Analysis failed");
       setResult(data);
+      saveHistory({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt: new Date().toISOString(),
+        skillsText,
+        targetRole,
+        result: data,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
+  }
+
+  function restoreHistory(entry: HistoryEntry) {
+    setSkillsText(entry.skillsText);
+    setTargetRole(entry.targetRole);
+    setResult(entry.result);
+    setError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function clearHistory() {
+    writeHistory([]);
+  }
+
+  function exportRoadmap() {
+    if (!result) return;
+    const role = result.targetRole?.label ?? "Custom role";
+    const lines: string[] = [
+      "# SkillStitch Roadmap",
+      "",
+      `**Target role:** ${role}`,
+      `**Generated:** ${new Date().toLocaleString()}`,
+      "",
+      "## Extracted skills",
+      result.extractedSkills.length ? result.extractedSkills.map((s) => `- ${s}`).join("\n") : "_None detected_",
+      "",
+      "## Matched skills",
+      result.matchedSkills.length ? result.matchedSkills.map((s) => `- ${s}`).join("\n") : "_None_",
+      "",
+      "## Skill gaps",
+      result.missingSkills.length ? result.missingSkills.map((s) => `- ${s}`).join("\n") : "_No major gaps_",
+      "",
+      "## Recommended projects",
+    ];
+
+    result.recommendations.forEach((p, i) => {
+      lines.push(
+        "",
+        `### ${i + 1}. ${p.title}`,
+        `_Score: ${p.score} · Skills: ${p.skills.join(", ")}_`,
+        "",
+        p.description,
+        "",
+        p.covers.length ? `**Covers gaps:** ${p.covers.join(", ")}` : "**Reinforces existing skills**",
+        "",
+        "**Steps:**",
+        ...p.steps.map((s) => `1. ${s}`),
+        "",
+        `**Resources:** ${p.resources.join(" · ")}`,
+      );
+    });
+
+    lines.push("", "---", "", "Generated with SkillStitch.");
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `skillstitch-roadmap-${new Date().toISOString().slice(0, 10)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -133,12 +256,52 @@ export default function Home() {
               </div>
             )}
           </div>
+
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Recent analyses</h2>
+              {history.length > 0 && (
+                <button type="button" onClick={clearHistory} className="text-xs text-slate-400 underline-offset-2 hover:text-rose-300 hover:underline">
+                  Clear
+                </button>
+              )}
+            </div>
+            {history.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-400">Your last 5 analyses are saved locally in this browser.</p>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {history.map((h) => (
+                  <li key={h.id}>
+                    <button
+                      type="button"
+                      onClick={() => restoreHistory(h)}
+                      className="w-full rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-left transition hover:border-cyan-400/40 hover:bg-slate-950"
+                    >
+                      <span className="block text-sm font-medium text-slate-200">{ROLES.find((r) => r.key === h.targetRole)?.label ?? h.targetRole}</span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-400">
+                        {new Date(h.createdAt).toLocaleString()} · {h.result.missingSkills.length} gaps
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </section>
 
       {result && (
         <section className="mt-8">
-          <h2 className="mb-4 text-xl font-semibold">Recommended Mini-Projects</h2>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold">Recommended Mini-Projects</h2>
+            <button
+              type="button"
+              onClick={exportRoadmap}
+              className="rounded-lg border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-sm font-medium text-cyan-300 transition hover:bg-cyan-400/20"
+            >
+              Export roadmap (.md)
+            </button>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             {result.recommendations.map((p) => (
               <article key={p.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
@@ -169,6 +332,10 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      <footer className="mt-12 border-t border-slate-800 pt-4 text-xs text-slate-500">
+        SkillStitch · Phase 1 MVP · Light NLP matching, no external ML services required.
+      </footer>
     </main>
   );
 }

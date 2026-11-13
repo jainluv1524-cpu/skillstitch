@@ -23,7 +23,7 @@ function tokenize(text: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9+#.\s-]/g, " ")
     .split(/[\s,\/|]+/)
-    .map((t) => t.trim())
+    .map((t) => t.trim().replace(/^[^a-z0-9+#]+|[^a-z0-9+#]+$/g, ""))
     .filter(Boolean);
 }
 
@@ -54,17 +54,18 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 function scoreProject(project: ProjectIdea, userSkills: Set<string>, missingSkills: Set<string>) {
-  const vocab = Array.from(new Set([...project.skills, ...Array.from(missingSkills), ...Array.from(userSkills)]));
-  // weight missing required skills higher to prioritize gap-filling projects (simple ML-style scoring)
-  const weights = vocab.map((s) => (missingSkills.has(s) ? 2 : 1));
-  const userVec = vocab.map((s, i) => (userSkills.has(s) ? 1 * weights[i] : 0));
-  const needVec = vocab.map((s, i) => (missingSkills.has(s) ? 1.5 * weights[i] : project.skills.includes(s) ? 0.5 : 0));
-  const targetVec = vocab.map((_, i) => needVec[i]);
-  const sim = cosineSimilarity(userVec.map((v, i) => v + targetVec[i] * 0.2), vocab.map((s, i) => (project.skills.includes(s) ? 1 * weights[i] : 0)));
   const covers = project.skills.filter((s) => missingSkills.has(s));
   const coverage = missingSkills.size ? covers.length / missingSkills.size : 0;
   const known = project.skills.filter((s) => userSkills.has(s)).length / Math.max(project.skills.length, 1);
-  const score = Number((sim * 0.4 + coverage * 0.45 + known * 0.15).toFixed(4));
+  const focus = covers.length / Math.max(project.skills.length, 1);
+
+  // Cosine similarity between the user's skill vector and the project's skill vector.
+  const vocab = Array.from(new Set([...project.skills, ...userSkills]));
+  const userVec = vocab.map((s) => (userSkills.has(s) ? 1 : 0));
+  const projectVec = vocab.map((s) => (project.skills.includes(s) ? 1 : 0));
+  const similarity = cosineSimilarity(userVec, projectVec);
+
+  const score = Number((coverage * 0.45 + similarity * 0.25 + known * 0.15 + focus * 0.15).toFixed(4));
   return { score, covers };
 }
 
