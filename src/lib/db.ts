@@ -56,6 +56,18 @@ export function touchUser(userId: string): void {
     .run(userId, new Date().toISOString());
 }
 
+/** Save a new user to the database. Returns true on success. */
+export function saveUser(userId: string, email: string): boolean {
+  try {
+    getDb()
+      .prepare("INSERT OR IGNORE INTO users (id, email, created_at) VALUES (?, ?, ?)")
+      .run(userId, email, new Date().toISOString());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function saveAnalysis(
   userId: string,
   input: { skillsText: string; targetRole: string; result: AnalysisResult }

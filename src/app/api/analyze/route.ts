@@ -7,7 +7,7 @@ import type { AiRunMeta } from "@/lib/ai/types";
 import { analyze, extractSkills, type RoleProfile } from "@/lib/analyzer";
 import { saveAnalysis } from "@/lib/db";
 import { ROLES, type RoleKey } from "@/lib/skills";
-import { getOrCreateUserId } from "@/lib/session";
+import { getUserId } from "@/lib/session";
 
 const MAX_INPUT_LENGTH = 20_000;
 const MAX_JD_LENGTH = 8_000;
@@ -110,8 +110,15 @@ export async function POST(req: Request) {
       result.ai = aiMeta;
     }
 
-    const { userId } = await getOrCreateUserId();
-    const saved = saveAnalysis(userId, { skillsText, targetRole, result });
+    const userId = await getUserId();
+    // If no authenticated user, fall back to anonymous cookie
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      const { getOrCreateUserIdAnonymous } = await import("@/lib/session");
+      const result = await getOrCreateUserIdAnonymous();
+      effectiveUserId = result.userId;
+    }
+    const saved = saveAnalysis(effectiveUserId, { skillsText, targetRole, result });
 
     return NextResponse.json({
       ...result,
