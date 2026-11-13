@@ -45,6 +45,87 @@ Most learning roadmaps are generic. SkillStitch makes the plan **personal**:
 | Database | SQLite via `node:sqlite` (Node 22.5+) |
 | "ML" | Lightweight NLP: tokenization, alias matching, weighted cosine similarity |
 
+## Architecture
+
+### System overview
+
+```mermaid
+flowchart TB
+  subgraph Browser["Browser"]
+    UI["Planner UI<br/>React client component"]
+    HistoryUI["History panel"]
+    Export["Markdown export"]
+  end
+
+  subgraph Server["Next.js server · Node.js runtime"]
+    AnalyzeRoute["POST /api/analyze"]
+    AnalysesRoute["GET / DELETE /api/analyses"]
+    DeleteRoute["DELETE /api/analyses/:id"]
+    Session["session.ts<br/>anonymous cookie"]
+    Analyzer["analyzer.ts<br/>extract · gap · score"]
+    DB["db.ts<br/>node:sqlite"]
+    Data["skills.ts<br/>roles · projects · aliases"]
+  end
+
+  SQLite[("SQLite<br/>data/skillstitch.db")]
+
+  UI -->|"skillsText, targetRole"| AnalyzeRoute
+  AnalyzeRoute --> Session
+  AnalyzeRoute --> Analyzer
+  Analyzer --> Data
+  AnalyzeRoute --> DB
+  DB --> SQLite
+
+  UI -->|"on mount"| AnalysesRoute
+  AnalysesRoute --> Session
+  AnalysesRoute --> DB
+  HistoryUI --> AnalysesRoute
+  UI --> DeleteRoute
+  DeleteRoute --> DB
+  Export --> UI
+```
+
+### Components
+
+| Component | Responsibility |
+| --- | --- |
+| `src/app/page.tsx` | Client UI: input, role picker, gap snapshot, recommendations, history, export |
+| `src/app/api/analyze/route.ts` | Validates input, runs analysis, saves the result, returns the saved id |
+| `src/app/api/analyses/route.ts` | Lists or clears analyses for the current session |
+| `src/app/api/analyses/[id]/route.ts` | Deletes a single analysis with an ownership check |
+| `src/lib/analyzer.ts` | Tokenization, skill extraction, gap analysis, weighted cosine scoring |
+| `src/lib/skills.ts` | Role profiles, project catalog, aliases, normalization |
+| `src/lib/session.ts` | Reads/sets the `skillstitch_uid` anonymous session cookie |
+| `src/lib/db.ts` | SQLite connection, schema creation, user/analysis queries |
+| `scripts/*` | Analyzer and in-memory SQLite smoke tests |
+| `Dockerfile` / `docker-compose.yml` | Node.js standalone deployment with a persistent volume |
+| `.github/workflows/ci.yml` | Lint, type-check, tests, and production build |
+
+### Analysis request flow
+
+1. The browser sends `{ skillsText, targetRole }` to `POST /api/analyze`.
+2. The route validates the input and resolves the anonymous session cookie.
+3. `analyzer.ts` tokenizes the text, normalizes aliases, extracts known skills, and compares them with the role profile.
+4. Each project is scored by gap coverage, cosine similarity, known-skill overlap, and gap focus.
+5. `db.ts` saves the analysis and returns the ranked recommendations plus a saved id.
+
+### History request flow
+
+1. On mount, the page calls `GET /api/analyses`.
+2. `session.ts` resolves the `skillstitch_uid` cookie to a user id.
+3. `db.ts` returns the latest 10 analyses for that user.
+4. Clearing calls `DELETE /api/analyses`; restoring is handled in client state.
+5. Deleting one entry calls `DELETE /api/analyses/:id`, which checks ownership before deleting.
+
+### Deployment topology
+
+```mermaid
+flowchart LR
+  Browser["Browser"] -->|HTTP| Container["Docker container<br/>Node.js 26 + Next.js standalone"]
+  Container --> Volume[("skillstitch-data volume<br/>/data/skillstitch.db")]
+  CI["GitHub Actions"] -->|lint · typecheck · test · build| Container
+```
+
 ## Getting started
 
 Requires **Node.js 22.5+** (tested on Node 26).
@@ -204,4 +285,4 @@ GitHub Actions runs lint, type-check, smoke tests, and a production build on eve
 
 ## License
 
-MIT
+**No license.** This project is shared for viewing and educational purposes. All rights reserved by the author.
