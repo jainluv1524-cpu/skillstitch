@@ -7,6 +7,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { isCoreSkill, isLearningSkill } from "@/lib/skills";
+
 // Service Worker Registration
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
