@@ -306,6 +306,7 @@ export const SKILL_ALIASES: Record<string, string> = {
   dockerfile: "docker",
   tests: "testing",
   unit: "testing",
+  brag: "communication",
 };
 
 export function normalizeSkill(token: string): string {
