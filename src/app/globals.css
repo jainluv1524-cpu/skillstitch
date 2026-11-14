@@ -38,6 +38,17 @@ body {
   color: var(--color-cream-soft);
 }
 
+/* Theme toggle icon */
+.sun {
+  display: none;
+}
+html.dark .sun {
+  display: block;
+}
+html.dark .moon {
+  display: none;
+}
+
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-sand) transparent;

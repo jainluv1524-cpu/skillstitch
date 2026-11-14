@@ -86,7 +86,9 @@ type GlyphKind =
   | "spark"
   | "search"
   | "bell"
-  | "arrow";
+  | "arrow"
+  | "moon"
+  | "sun";
 
 const GLYPHS: Record<GlyphKind, ReactNode> = {
   compass: (
@@ -137,6 +139,17 @@ const GLYPHS: Record<GlyphKind, ReactNode> = {
     <>
       <path d="M5 12h14" />
       <path d="m13 6 6 6-6 6" />
+    </>
+  ),
+  moon: (
+    <>
+      <path d="M20 18l-5-5a4 4 0 0 0-5.66 5.66L12 19.66l7.95 7.95a4 4 0 0 0 5.66-5.66L20 18z" />
+    </>
+  ),
+  sun: (
+    <>
+      <circle cx="12" cy="12" r="5" />
+      <path d="M12 1v2m0 4vm-2m0 4v2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0-8a4 4 0 1 1 0 8 4 4 0 0 1 0-8z" />
     </>
   ),
 };
@@ -508,6 +521,18 @@ export default function Home() {
           <div className="flex items-center gap-2 normal-case tracking-normal">
             <span className={`h-1.5 w-1.5 rounded-full ${aiDot}`} />
             <span className="text-[10px] text-cream/60">{aiLabel}</span>
+            <button
+              id="theme-toggle"
+              aria-label="Toggle dark mode"
+              className="rounded-full border border-line bg-cream-soft p-1.5 transition-colors hover:bg-cream/5"
+              onClick={() => {
+                const html = document.documentElement;
+                html.classList.toggle("dark");
+              }}
+            >
+              <Glyph kind="sun" className="h-4 w-4 text-maroon sun" />
+              <Glyph kind="moon" className="h-4 w-4 text-maroon moon" />
+            </button>
           </div>
           <p>
             Intelligence

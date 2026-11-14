@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   output: "standalone",
   cacheComponents: true,
   partialPrefetching: true,
+  // darkMode: "class",  // Removed - using manual class toggling
   turbopack: {
     rules: {
       "*.css": {
