@@ -1,6 +1,25 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+
+// Service Worker Registration
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker
+      .register("/service-worker.js", { scope: "/" })
+      .then((registration) => {
+        // console.log("SW registered: ", registration);
+      })
+      .catch((registrationError) => {
+        // console.log("SW registration failed: ", registrationError);
+      });
+  });
+}
 
 type Recommendation = {
   id: string;
